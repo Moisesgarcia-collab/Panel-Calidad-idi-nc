@@ -8,7 +8,7 @@ import datetime
 from fpdf import FPDF
 import gspread 
 from oauth2client.service_account import ServiceAccountCredentials
-import json # NUEVO: Para manejar la caja fuerte de secretos en la nube
+import json
 
 # --- 1. ANCLAJE ABSOLUTO ---
 DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
@@ -43,71 +43,22 @@ st.markdown("Sistema conectado a la Nube (Google Sheets)")
 if 'es_admin' not in st.session_state:
     st.session_state['es_admin'] = False
 
-# 3. CONEXIÓN A GOOGLE SHEETS E INTELIGENCIA DE NUBE
+# 3. CONEXIÓN A GOOGLE SHEETS (CON PARACAÍDAS PARA LOCAL Y NUBE)
 @st.cache_resource
 def conectar_google_sheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     
-    # MAGIA DE LA NUBE: Si detectamos la caja fuerte "GOOGLE_JSON" en Streamlit Cloud...
-    if "GOOGLE_JSON" in st.secrets:
-        # Extraemos el texto secreto, lo convertimos y creamos un archivo temporal en el servidor
-        datos_credenciales = json.loads(st.secrets["GOOGLE_JSON"])
-        with open("credenciales_temp.json", "w") as f:
-            json.dump(datos_credenciales, f)
-        # Usamos ese archivo seguro del servidor
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales_temp.json", scope)
-    else:
-        # Si no estamos en la nube, usamos tu archivo local de siempre
+    try:
+        if "GOOGLE_JSON" in st.secrets:
+            datos_credenciales = json.loads(st.secrets["GOOGLE_JSON"])
+            with open("credenciales_temp.json", "w") as f:
+                json.dump(datos_credenciales, f)
+            creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales_temp.json", scope)
+        else:
+            creds = ServiceAccountCredentials.from_json_keyfile_name(RUTA_CREDENCIALES, scope)
+    except Exception:
         creds = ServiceAccountCredentials.from_json_keyfile_name(RUTA_CREDENCIALES, scope)
         
-    cliente = gspread.authorize(creds)
-    return cliente.open("Base_HSEQ")
-
-# Nos conectamos a las pestañas
-db = conectar_google_sheets()
-hoja_idi = db.worksheet("IDI")
-hoja_ncs = db.worksheet("NCs")
-
-# ... (AQUÍ CONTINÚA EL RESTO DE TU CÓDIGO EXACTAMENTE IGUAL A COMO LO TENÍAS) ...
-
-# --- 1. ANCLAJE ABSOLUTO ---
-DIRECTORIO_ACTUAL = os.path.dirname(os.path.abspath(__file__))
-RUTA_CREDENCIALES = os.path.join(DIRECTORIO_ACTUAL, "credenciales.json")
-
-# 2. Configuración general de la página
-st.set_page_config(page_title="Panel de Control de Calidad - Oil & Gas", layout="wide")
-
-# Escudo Anti-traducción y CSS Futurista
-st.markdown('<meta name="google" content="notranslate">', unsafe_allow_html=True)
-st.markdown("""
-<style>
-    div[data-testid="metric-container"] {
-        background-color: #1E1E2E; 
-        border: 1px solid #4A90E2; 
-        padding: 5% 5% 5% 10%;
-        border-radius: 10px; 
-        box-shadow: 0px 4px 15px rgba(74, 144, 226, 0.3); 
-        transition: transform 0.2s; 
-    }
-    div[data-testid="metric-container"]:hover {
-        transform: scale(1.02);
-        box-shadow: 0px 6px 20px rgba(74, 144, 226, 0.6);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-st.title("Panel de seguimiento de Calidad ☁️")
-st.markdown("Sistema conectado a la Nube (Google Sheets)")
-
-# --- INICIALIZAR MEMORIA DE SESIÓN (SEGURIDAD) ---
-if 'es_admin' not in st.session_state:
-    st.session_state['es_admin'] = False
-
-# 3. CONEXIÓN A GOOGLE SHEETS
-@st.cache_resource
-def conectar_google_sheets():
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(RUTA_CREDENCIALES, scope)
     cliente = gspread.authorize(creds)
     return cliente.open("Base_HSEQ")
 
@@ -138,14 +89,11 @@ def cargar_datos_ncs():
         df[columnas_texto] = df[columnas_texto].fillna("N/A").astype(str)
     return df
 
-# --- PANEL LATERAL DE SEGURIDAD Y CONTROL ---
 with st.sidebar:
     st.write("### 🔐 Acceso de Administrador")
-    # type="password" oculta las letras con asteriscos
     clave_ingresada = st.text_input("Contraseña para Editar", type="password")
     
-    # Validador de contraseña (¡AQUÍ PUEDES CAMBIAR LA CLAVE!)
-    if clave_ingresada == "Gestion2026":
+    if clave_ingresada == "HSEQ2026":
         st.session_state['es_admin'] = True
         st.success("Modo Edición Activado")
     elif clave_ingresada != "":
@@ -164,9 +112,7 @@ with st.sidebar:
 df_inspecciones = cargar_datos_idi()
 df_ncs = cargar_datos_ncs()
 
-# ==========================================
 # 5. Funciones de Exportación (Excel y PDF)
-# ==========================================
 def convertir_df_a_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -223,13 +169,10 @@ tab1, tab2 = st.tabs(["📋 Informes de Inspección (IDI)", "⚠️ Productos No
 
 # --- PESTAÑA 1: INSPECCIONES (Tablero IDI) ---
 with tab1:
-    # --- ESCUDO DE SEGURIDAD ---
-    # Esto evalúa: Si la persona puso la clave correcta, muestra los formularios.
     if st.session_state['es_admin']:
         with st.expander("➕ Cargar nuevo Informe de Inspección (IDI)"):
             with st.form("form_nueva_idi", clear_on_submit=True):
                 st.write("**Complete todos los campos de la nueva inspección:**")
-                
                 f1_c1, f1_c2, f1_c3, f1_c4 = st.columns(4)
                 input_fecha = f1_c1.date_input("Fecha", format="DD/MM/YYYY")
                 input_confecciono = f1_c2.text_input("Confeccionó")
@@ -296,8 +239,6 @@ with tab1:
                                 st.error(f"Error al actualizar la base de datos: {e}")
                 else:
                     st.info("🎉 ¡Excelente trabajo! No hay informes ABIERTOS en este momento.")
-            else:
-                st.warning("No se encontraron las columnas necesarias para cerrar reportes.")
 
     st.divider() 
 
@@ -320,6 +261,7 @@ with tab1:
             fecha_min_idi = datetime.date(2026, 1, 1)
             fecha_max_idi = datetime.date(2026, 12, 31)
             
+        # SOLUCIÓN: Sangría corregida aquí
         fecha_inicio_idi = col_filtros3.date_input("Desde (IDI):", value=fecha_min_idi, format="DD/MM/YYYY")
         fecha_fin_idi = col_filtros4.date_input("Hasta (IDI):", value=fecha_max_idi, format="DD/MM/YYYY")
     else:
@@ -407,7 +349,6 @@ with tab1:
 
 # --- PESTAÑA 2: NO CONFORMIDADES (MasterNCs) ---
 with tab2:
-    # --- ESCUDO DE SEGURIDAD ---
     if st.session_state['es_admin']:
         with st.expander("➕ Cargar nueva No Conformidad (NC)"):
             with st.form("form_nueva_nc", clear_on_submit=True):
@@ -450,6 +391,7 @@ with tab2:
                         hoja_ncs.append_row(nueva_fila_nc)
                         st.cache_data.clear()
                         st.toast("✅ ¡No Conformidad guardada exitosamente en la nube!", icon="☁️")
+                                
                     except Exception as e:
                         st.error(f"Ocurrió un error al enviar a la nube: {e}")
 
@@ -478,8 +420,6 @@ with tab2:
                                 st.error(f"Error al actualizar la base de datos: {e}")
                 else:
                     st.info("🎉 ¡Excelente trabajo! No hay No Conformidades pendientes de cierre.")
-            else:
-                st.warning("No se encontraron las columnas necesarias para cerrar NCs.")
 
     st.divider()
 
