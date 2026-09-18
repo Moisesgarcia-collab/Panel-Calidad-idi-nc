@@ -43,11 +43,10 @@ st.markdown("Sistema conectado a la Nube (Google Sheets)")
 if 'es_admin' not in st.session_state:
     st.session_state['es_admin'] = False
 
-# 3. CONEXIÓN A GOOGLE SHEETS (CON PARACAÍDAS PARA LOCAL Y NUBE)
+# 3. CONEXIÓN A GOOGLE SHEETS
 @st.cache_resource
 def conectar_google_sheets():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
     try:
         if "GOOGLE_JSON" in st.secrets:
             datos_credenciales = json.loads(st.secrets["GOOGLE_JSON"])
@@ -261,7 +260,6 @@ with tab1:
             fecha_min_idi = datetime.date(2026, 1, 1)
             fecha_max_idi = datetime.date(2026, 12, 31)
             
-        # SOLUCIÓN: Sangría corregida aquí
         fecha_inicio_idi = col_filtros3.date_input("Desde (IDI):", value=fecha_min_idi, format="DD/MM/YYYY")
         fecha_fin_idi = col_filtros4.date_input("Hasta (IDI):", value=fecha_max_idi, format="DD/MM/YYYY")
     else:
@@ -305,12 +303,32 @@ with tab1:
             
         st.divider()
 
+        # ==========================================
+        # GRÁFICOS GERENCIALES IDI
+        # ==========================================
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
             if total_idi > 0:
-                fig_dona_idi = px.pie(df_idi_filtrado, names=columna_estado, hole=0.6, title="PROPORCIÓN DE ESTADO DE IDI")
-                fig_dona_idi.update_traces(marker=dict(colors=['#d62728' if 'ABIERTO' in str(x).upper() else '#2ca02c' for x in df_idi_filtrado[columna_estado].unique()]))
+                mapa_colores_idi = {"ABIERTO": "#FF4B4B", "CERRADO": "#28A745"}
+                fig_dona_idi = px.pie(
+                    df_idi_filtrado, names=columna_estado, hole=0.6, 
+                    title="ESTADO DE INSPECCIONES (IDI)",
+                    color=columna_estado,
+                    color_discrete_map=mapa_colores_idi
+                )
+                
+                fig_dona_idi.update_traces(
+                    textinfo='percent+label', 
+                    textfont_size=14,
+                    textfont_color='white',
+                    marker=dict(line=dict(color='#000000', width=1))
+                )
+                fig_dona_idi.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
+                    showlegend=False, 
+                    title_font=dict(size=18, color='#FFFFFF', family="Arial")
+                )
                 st.plotly_chart(fig_dona_idi, use_container_width=True)
                 figuras_idi_export.append(fig_dona_idi)
             
@@ -320,10 +338,22 @@ with tab1:
                 conteo_disc.columns = ['Disciplina', 'Cantidad']
                 fig_bar_idi = px.bar(
                     conteo_disc, x='Cantidad', y='Disciplina', orientation='h', 
-                    title="INFORMES POR DISCIPLINA", text='Cantidad',
-                    color_discrete_sequence=["#4A90E2"] 
+                    title="INFORMES POR DISCIPLINA", text='Cantidad'
                 )
-                fig_bar_idi.update_traces(textposition='outside')
+                
+                fig_bar_idi.update_traces(
+                    marker_color='#008FFB', 
+                    textposition='inside',  
+                    textfont_color='white',
+                    textfont_size=14
+                )
+                fig_bar_idi.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(showgrid=False, visible=False), 
+                    yaxis=dict(showgrid=False, title=None, tickfont=dict(color='white')),
+                    title_font=dict(size=18, color='#FFFFFF', family="Arial"),
+                    margin=dict(l=0, r=0, t=40, b=0)
+                )
                 st.plotly_chart(fig_bar_idi, use_container_width=True)
                 figuras_idi_export.append(fig_bar_idi)
 
@@ -344,9 +374,13 @@ with tab1:
     st.dataframe(
         df_idi_mostrar, 
         use_container_width=True,
-        column_config={"Informe": st.column_config.LinkColumn("Documento de SharePoint", display_text="Abrir PDF")}
+        column_config={
+            "Informe": st.column_config.LinkColumn(
+                "Documento de Respaldo", 
+                display_text="Abrir PDF 🔗"
+            )
+        }
     )
-
 # --- PESTAÑA 2: NO CONFORMIDADES (MasterNCs) ---
 with tab2:
     if st.session_state['es_admin']:
@@ -483,46 +517,143 @@ with tab2:
         
         st.divider()
 
+        # ==========================================
+        # GRÁFICOS GERENCIALES NC
+        # ==========================================
         col_nc1, col_nc2, col_nc3 = st.columns(3)
         
         with col_nc1:
             if total_nc > 0:
                 conteo_crit = df_ncs_filtrado['Criticidad'].value_counts().reset_index()
                 conteo_crit.columns = ['Criticidad', 'Cantidad']
+                
+                mapa_colores = {"Leve": "#28A745", "Menor": "#008FFB", "Mayor": "#FEB019", "Crítica": "#FF4B4B", "Crítico": "#FF4B4B"}
                 fig_riesgo = px.bar(
                     conteo_crit, x='Criticidad', y='Cantidad', 
-                    title="Perfil de Riesgo", text='Cantidad',
-                    color_discrete_sequence=["#1A5E9C"] 
+                    title="PERFIL DE RIESGO", text='Cantidad',
+                    color='Criticidad', color_discrete_map=mapa_colores
+                )
+                
+                fig_riesgo.update_traces(textposition='inside', textfont_color='white', textfont_size=16)
+                fig_riesgo.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    showlegend=False,
+                    xaxis=dict(showgrid=False, title=None, tickfont=dict(color='white')),
+                    yaxis=dict(showgrid=False, visible=False),
+                    title_font=dict(size=18, color='#FFFFFF', family="Arial")
                 )
                 st.plotly_chart(fig_riesgo, use_container_width=True)
                 figuras_nc_export.append(fig_riesgo)
             
         with col_nc2:
-            if 'Contratista' in df_ncs_filtrado.columns and 'Dias_Abiertos_Num' in df_ncs_filtrado.columns and total_nc > 0:
+            if 'Contratista' in df_ncs_filtrado.columns and total_nc > 0:
                 df_ncs_grafico = df_ncs_filtrado.copy()
                 df_ncs_grafico.loc[df_ncs_grafico['Contratista'].astype(str).str.upper().str.contains("OPS|OPERACION", na=False), 'Contratista'] = 'OPS'
                 
-                atrasos = df_ncs_grafico.groupby('Contratista')['Dias_Abiertos_Num'].sum().reset_index()
-                fig_atraso = px.bar(
-                    atrasos, x='Dias_Abiertos_Num', y='Contratista', orientation='h', 
-                    title="Ranking de Atrasos", text='Dias_Abiertos_Num',
-                    color='Contratista', 
-                    color_discrete_sequence=["#D95C14", "#F28E2B", "#4A90E2"]
-                )
-                fig_atraso.update_layout(showlegend=False)
-                st.plotly_chart(fig_atraso, use_container_width=True)
-                figuras_nc_export.append(fig_atraso)
+                col_limite_encontrada = None
+                for col in df_ncs_grafico.columns:
+                    if col.strip().lower() in ['fecha límite', 'fecha limite', 'fechalimite']:
+                        col_limite_encontrada = col
+                        break
+                
+                if col_limite_encontrada:
+                    hoy = pd.to_datetime('today')
+                    df_ncs_grafico['Fecha_Limite_DT'] = pd.to_datetime(df_ncs_grafico[col_limite_encontrada], format='%d/%m/%Y', errors='coerce')
+                    df_ncs_grafico['Dias_Restantes'] = (df_ncs_grafico['Fecha_Limite_DT'] - hoy).dt.days
+                    
+                    def asignar_color_alerta(row):
+                        if 'CERRAD' in str(row['Estado']).upper():
+                            return 'Cerrada'
+                        if pd.isna(row['Dias_Restantes']):
+                            return 'Sin Fecha'
+                        if row['Dias_Restantes'] < 0:
+                            return 'Vencida (Rojo)'
+                        elif 0 <= row['Dias_Restantes'] <= 7:
+                            return 'Alerta (Amarillo)'
+                        else:
+                            return 'A tiempo (Verde)'
+                            
+                    df_ncs_grafico['Semaforo'] = df_ncs_grafico.apply(asignar_color_alerta, axis=1)
+                    conteo_semaforo = df_ncs_grafico.groupby(['Contratista', 'Semaforo']).size().reset_index(name='Cantidad')
+                    
+                    # --- CORRECCIÓN DE COLOR PARA "CERRADA" EN MODO OSCURO ---
+                    colores_alerta = {
+                        'Vencida (Rojo)': '#FF4B4B',
+                        'Alerta (Amarillo)': '#FEB019',
+                        'A tiempo (Verde)': '#00CC96',
+                        'Cerrada': '#9E9E9E', # Color Gris Plata Luminoso para destacar en el fondo oscuro
+                        'Sin Fecha': '#808080'
+                    }
+                    
+                    fig_atraso = px.bar(
+                        conteo_semaforo, x='Cantidad', y='Contratista', color='Semaforo', orientation='h', 
+                        title="ESTADO DE ALERTAS POR CONTRATISTA", text='Cantidad',
+                        color_discrete_map=colores_alerta
+                    )
+                    
+                    fig_atraso.update_traces(textposition='inside', textfont_color='white', textfont_size=14)
+                    
+                    fig_atraso.update_layout(
+                        barmode='stack', 
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                        showlegend=True,
+                        legend_title_text=None,
+                        legend=dict(
+                            orientation="h", 
+                            yanchor="top", 
+                            y=-0.15, 
+                            xanchor="center", 
+                            x=0.5, 
+                            font=dict(size=12, color="white")
+                        ),
+                        xaxis=dict(showgrid=False, visible=False),
+                        yaxis=dict(showgrid=False, title=None, tickfont=dict(color='white')),
+                        title_font=dict(size=16, color='#FFFFFF', family="Arial"),
+                        margin=dict(l=0, r=0, t=50, b=50) 
+                    )
+                    st.plotly_chart(fig_atraso, use_container_width=True)
+                    figuras_nc_export.append(fig_atraso)
+                else:
+                    atrasos = df_ncs_grafico.groupby('Contratista')['Dias_Abiertos_Num'].sum().reset_index()
+                    fig_atraso = px.bar(
+                        atrasos, x='Dias_Abiertos_Num', y='Contratista', orientation='h', 
+                        title="RANKING DE ATRASOS (DÍAS)", text='Dias_Abiertos_Num'
+                    )
+                    fig_atraso.update_traces(marker_color='#FEB019', textposition='inside', textfont_color='black', textfont_size=14)
+                    fig_atraso.update_layout(
+                        plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', showlegend=False,
+                        xaxis=dict(showgrid=False, visible=False),
+                        yaxis=dict(showgrid=False, title=None, tickfont=dict(color='white')),
+                        title_font=dict(size=16, color='#FFFFFF', family="Arial"), margin=dict(l=0, r=0, t=40, b=0)
+                    )
+                    st.plotly_chart(fig_atraso, use_container_width=True)
+                    figuras_nc_export.append(fig_atraso)
                 
         with col_nc3:
             if total_nc > 0:
+                mapa_colores_estatus = {
+                    "Abierta": "#FF4B4B",     
+                    "En Gestión": "#FEB019",  
+                    "Cerrada": "#28A745"      
+                }
+                
                 fig_estatus = px.pie(
-                    df_ncs_filtrado, names='Estado', hole=0.7, 
-                    title="Estatus Operativo", color='Estado',
-                    color_discrete_map={
-                        "En Gestión": "#D95C14", 
-                        "Abierta": "#F28E2B",    
-                        "Cerrada": "#808080"     
-                    }
+                    df_ncs_filtrado, names='Estado', hole=0.6, 
+                    title="ESTATUS OPERATIVO",
+                    color='Estado',
+                    color_discrete_map=mapa_colores_estatus
+                )
+                
+                fig_estatus.update_traces(
+                    textinfo='percent+label',
+                    textfont_size=14,
+                    textfont_color='white',
+                    marker=dict(line=dict(color='#000000', width=1))
+                )
+                fig_estatus.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    showlegend=False,
+                    title_font=dict(size=18, color='#FFFFFF', family="Arial")
                 )
                 st.plotly_chart(fig_estatus, use_container_width=True)
                 figuras_nc_export.append(fig_estatus)
@@ -533,8 +664,15 @@ with tab2:
             if not evolucion.empty:
                 fig_linea = px.line(
                     evolucion, x='Mes', y='Hallazgos', 
-                    title="Evolución Mensual de Hallazgos", markers=True,
-                    color_discrete_sequence=["#4A90E2"]
+                    title="EVOLUCIÓN MENSUAL DE HALLAZGOS", markers=True
+                )
+                
+                fig_linea.update_traces(line_color='#008FFB', marker=dict(size=10, color='#FF4B4B'))
+                fig_linea.update_layout(
+                    plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(showgrid=False, title=None, tickfont=dict(color='white')),
+                    yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)', title=None, tickfont=dict(color='white')),
+                    title_font=dict(size=18, color='#FFFFFF', family="Arial")
                 )
                 st.plotly_chart(fig_linea, use_container_width=True)
                 figuras_nc_export.append(fig_linea)
@@ -557,11 +695,29 @@ with tab2:
                     st.download_button(label="📄 Haz clic aquí para descargar tu PDF", data=pdf_nc, file_name="Reporte_NC.pdf", mime="application/pdf")
         
         st.write("### Base de datos NCs en tiempo real")
-        st.dataframe(df_ncs_mostrar[columnas_finales], use_container_width=True)
+        st.dataframe(
+            df_ncs_mostrar[columnas_finales], 
+            use_container_width=True,
+            column_config={
+                "Evidencia": st.column_config.LinkColumn(
+                    "Evidencia Adjunta", 
+                    display_text="Ver Archivo 🔗"
+                )
+            }
+        )
         
         with st.expander("Ver base de datos completa de NCs"):
-            st.dataframe(df_ncs_mostrar, use_container_width=True)
-            
+            st.dataframe(
+                df_ncs_mostrar, 
+                use_container_width=True,
+                column_config={
+                    "Evidencia": st.column_config.LinkColumn(
+                        "Evidencia Adjunta", 
+                        display_text="Ver Archivo 🔗"
+                    )
+                }
+            )
+
 # --- PIE DE PÁGINA CORPORATIVO ---
 st.divider()
 st.markdown("""
