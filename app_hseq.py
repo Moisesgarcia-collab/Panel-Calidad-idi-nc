@@ -561,3 +561,12 @@ with tab2:
         
         with st.expander("Ver base de datos completa de NCs"):
             st.dataframe(df_ncs_mostrar, use_container_width=True)
+            
+# --- PIE DE PÁGINA CORPORATIVO ---
+st.divider()
+st.markdown("""
+    <div style="text-align: center; color: gray; font-size: 12px;">
+        Sistema de Gestión de Calidad | Desarrollado por Moises Garcia para Facilities Oil & Gas <br>
+        Versión 1.0 - Producción y desarrollo continuo
+    </div>
+""", unsafe_allow_html=True)
