@@ -120,66 +120,130 @@ def convertir_df_a_excel(df):
 
 def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
     pdf = FPDF(orientation='L') 
+    pdf.set_auto_page_break(auto=True, margin=15)
     
-    # --- 1. SECCIÓN VISUAL CON MATPLOTLIB (MOTOR NATIVO) ---
+    # --- 1. PORTADA Y ESTADÍSTICAS VISUALES CON MATPLOTLIB ---
     pdf.add_page()
-    pdf.set_font('Arial', 'B', 16)
-    pdf.cell(0, 10, titulo_reporte + " - Resumen Visual", ln=True, align='C')
+    
+    # Banner del Título del Reporte
+    pdf.set_fill_color(30, 30, 46) # Color corporativo oscuro
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 18)
+    pdf.cell(0, 15, f"  {titulo_reporte} - Panel de Control", ln=True, align='L', fill=True)
     pdf.ln(5)
     
-    # Creamos un gráfico nativo 100% seguro para la nube
-    plt.figure(figsize=(8, 4))
+    # Lienzo de Matplotlib: 1 Fila, 2 Columnas para múltiples estadísticas
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    fig.patch.set_facecolor('#ffffff') 
     
-    if tipo_reporte == "IDI" and 'Estado' in df.columns:
-        conteo = df['Estado'].value_counts()
-        if not conteo.empty:
-            plt.pie(conteo, labels=conteo.index, autopct='%1.1f%%', colors=['#FF4B4B', '#28A745'])
-            plt.title("Estado de Inspecciones")
-    elif tipo_reporte == "NC" and 'Criticidad' in df.columns:
-        conteo = df['Criticidad'].value_counts()
-        if not conteo.empty:
-            conteo.plot(kind='bar', color=['#28A745', '#008FFB', '#FEB019', '#FF4B4B'])
-            plt.title("Perfil de Riesgo de No Conformidades")
-            plt.xticks(rotation=0)
-    
-    # Guardamos el gráfico de Matplotlib como PNG temporal
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-        plt.savefig(tmpfile.name, format="png", bbox_inches="tight")
-        plt.close() # Cerramos la figura para liberar memoria del servidor
+    if tipo_reporte == "IDI":
+        # Gráfico 1: Estado (Gráfico de Dona)
+        if 'Estado' in df.columns:
+            conteo_est = df['Estado'].value_counts()
+            if not conteo_est.empty:
+                colores_est = ['#FF4B4B' if 'ABIERTO' in str(x).upper() else '#28A745' for x in conteo_est.index]
+                ax1.pie(conteo_est, labels=conteo_est.index, autopct='%1.1f%%', startangle=90, colors=colores_est, wedgeprops={'width': 0.4, 'edgecolor': 'w'})
+                ax1.set_title("Estado de Inspecciones", fontsize=14, fontweight='bold', color='#333333')
         
-        # Insertamos la imagen procesada en el documento PDF
-        pdf.image(tmpfile.name, x=70, w=150)
+        # Gráfico 2: Top Disciplinas (Barras Horizontales)
+        if 'Disciplina' in df.columns:
+            conteo_disc = df['Disciplina'].value_counts().head(5) # Top 5
+            if not conteo_disc.empty:
+                ax2.barh(conteo_disc.index, conteo_disc.values, color='#4A90E2')
+                ax2.set_title("Top 5 Disciplinas Inspeccionadas", fontsize=14, fontweight='bold', color='#333333')
+                ax2.invert_yaxis() # Ordenar de mayor a menor
+                
+                # Diseño limpio: quitar bordes
+                for spine in ['top', 'right', 'bottom']:
+                    ax2.spines[spine].set_visible(False)
+                ax2.xaxis.set_visible(False)
+                
+                # Agregar números al final de cada barra
+                for i, v in enumerate(conteo_disc.values):
+                    ax2.text(v + 0.1, i, str(v), va='center', fontweight='bold', color='#333333')
+
+    else: # Lógica Visual para No Conformidades (NC)
+        # Gráfico 1: Estado (Gráfico de Dona)
+        if 'Estado' in df.columns:
+            conteo_est = df['Estado'].value_counts()
+            if not conteo_est.empty:
+                colores_est = ['#FF4B4B' if 'ABIERT' in str(x).upper() else '#28A745' if 'CERRAD' in str(x).upper() else '#FEB019' for x in conteo_est.index]
+                ax1.pie(conteo_est, labels=conteo_est.index, autopct='%1.1f%%', startangle=90, colors=colores_est, wedgeprops={'width': 0.4, 'edgecolor': 'w'})
+                ax1.set_title("Estado Operativo NCs", fontsize=14, fontweight='bold', color='#333333')
+        
+        # Gráfico 2: Criticidad (Barras Verticales)
+        if 'Criticidad' in df.columns:
+            conteo_crit = df['Criticidad'].value_counts()
+            if not conteo_crit.empty:
+                mapa_colores = {'Leve': '#28A745', 'Menor': '#008FFB', 'Mayor': '#FEB019', 'Crítica': '#FF4B4B', 'Crítico': '#FF4B4B'}
+                colores_usados = [mapa_colores.get(str(x).capitalize(), '#808080') for x in conteo_crit.index]
+                
+                ax2.bar(conteo_crit.index, conteo_crit.values, color=colores_usados)
+                ax2.set_title("Nivel de Riesgo (Criticidad)", fontsize=14, fontweight='bold', color='#333333')
+                
+                # Diseño limpio
+                for spine in ['top', 'right', 'left']:
+                    ax2.spines[spine].set_visible(False)
+                ax2.yaxis.set_visible(False)
+                
+                # Agregar números encima de las barras
+                for i, v in enumerate(conteo_crit.values):
+                    ax2.text(i, v + 0.2, str(v), ha='center', fontweight='bold', color='#333333')
+
+    plt.tight_layout()
+    
+    # Guardar gráfico combinado de alta resolución
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+        plt.savefig(tmpfile.name, format="png", dpi=150, bbox_inches="tight")
+        plt.close(fig) # Liberar memoria
+        pdf.image(tmpfile.name, x=10, w=275) # Insertar en PDF
     os.remove(tmpfile.name)
     
-    # --- 2. SECCIÓN DE DATOS (TABLA) ---
+    # --- 2. SECCIÓN DE DATOS (TABLA ESTILIZADA) ---
     pdf.add_page()
+    pdf.set_text_color(0, 0, 0)
     pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, titulo_reporte + " - Datos Detallados", ln=True, align='C')
-    pdf.ln(5)
+    pdf.cell(0, 10, "Registro Detallado", ln=True, align='L')
+    pdf.ln(2)
 
+    # Ampliamos las columnas para mayor detalle
     if tipo_reporte == "IDI":
-        columnas_pdf = ['Fecha', 'Disciplina', 'Contratista', 'Estado']
+        columnas_pdf = ['Fecha', 'Disciplina', 'Contratista', 'Aspecto', 'Criticidad', 'Estado']
     else:
-        columnas_pdf = ['ID', 'Criticidad', 'Responsable', 'Estado', 'Dias_Abiertas']
+        columnas_pdf = ['ID', 'Fecha', 'Contratista', 'Criticidad', 'Estado', 'Dias_Abiertas']
         
     cols_existentes = [col for col in columnas_pdf if col in df.columns]
-    ancho_col = 270 / max(len(cols_existentes), 1)
+    ancho_col = 277 / max(len(cols_existentes), 1) # 277 es el máximo ancho útil horizontal
 
+    # Formato del Encabezado de la tabla
+    pdf.set_fill_color(74, 144, 226) # Azul corporativo
+    pdf.set_text_color(255, 255, 255)
     pdf.set_font('Arial', 'B', 10)
     for col in cols_existentes:
-        pdf.cell(ancho_col, 10, str(col), border=1, align='C')
+        pdf.cell(ancho_col, 10, str(col).replace("_", " "), border=0, align='C', fill=True)
     pdf.ln()
 
-    pdf.set_font('Arial', '', 8)
+    # Formato de las Filas (Zebra Striping: colores intercalados)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    intercalar_color = False
+    pdf.set_fill_color(242, 242, 242) # Gris claro para intercalar
+    
     for _, row in df.head(100).iterrows():
         for col in cols_existentes:
             valor = row[col]
             texto = str(valor) if pd.notna(valor) else "N/A"
             texto = texto.encode('latin-1', 'replace').decode('latin-1')
-            pdf.cell(ancho_col, 8, texto[:35], border=1)
+            
+            # Acortar textos demasiado largos para no romper la tabla
+            texto = texto[:35] + "..." if len(texto) > 35 else texto
+            
+            # fill=intercalar_color pinta el fondo solo si es True
+            pdf.cell(ancho_col, 8, texto, border=1 if not intercalar_color else 0, align='C', fill=intercalar_color)
         pdf.ln()
+        intercalar_color = not intercalar_color # Cambia entre True y False en cada fila
 
-    # --- 3. EXPORTACIÓN EN DISCO PARA EVITAR ERRORES DE MEMORIA ---
+    # --- 3. EXPORTACIÓN SEGURA EN DISCO ---
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
     
