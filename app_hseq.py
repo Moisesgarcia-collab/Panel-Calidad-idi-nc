@@ -1,5 +1,6 @@
 import streamlit as st
-import pandas as pd
+import pandas as pd 
+import matplotlib.pyplot as plt
 import plotly.express as px
 import io
 import os
@@ -120,22 +121,37 @@ def convertir_df_a_excel(df):
 def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
     pdf = FPDF(orientation='L') 
     
-    # 1. SECCIÓN VISUAL (Gráficos)
-    if figuras and len(figuras) > 0:
-        for index, fig in enumerate(figuras):
-            pdf.add_page()
-            if index == 0:
-                pdf.set_font('Arial', 'B', 16)
-                pdf.cell(0, 10, titulo_reporte + " - Resumen Visual", ln=True, align='C')
-                pdf.ln(5)
-                
-            # Kaleido toma la fotografía y la pega en el PDF
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                fig.write_image(tmpfile.name, format="png", width=900, height=450)
-                pdf.image(tmpfile.name, x=15, w=260)
-            os.remove(tmpfile.name)
-            
-    # 2. SECCIÓN DE DATOS (Tabla)
+    # --- 1. SECCIÓN VISUAL CON MATPLOTLIB (MOTOR NATIVO) ---
+    pdf.add_page()
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, titulo_reporte + " - Resumen Visual", ln=True, align='C')
+    pdf.ln(5)
+    
+    # Creamos un gráfico nativo 100% seguro para la nube
+    plt.figure(figsize=(8, 4))
+    
+    if tipo_reporte == "IDI" and 'Estado' in df.columns:
+        conteo = df['Estado'].value_counts()
+        if not conteo.empty:
+            plt.pie(conteo, labels=conteo.index, autopct='%1.1f%%', colors=['#FF4B4B', '#28A745'])
+            plt.title("Estado de Inspecciones")
+    elif tipo_reporte == "NC" and 'Criticidad' in df.columns:
+        conteo = df['Criticidad'].value_counts()
+        if not conteo.empty:
+            conteo.plot(kind='bar', color=['#28A745', '#008FFB', '#FEB019', '#FF4B4B'])
+            plt.title("Perfil de Riesgo de No Conformidades")
+            plt.xticks(rotation=0)
+    
+    # Guardamos el gráfico de Matplotlib como PNG temporal
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+        plt.savefig(tmpfile.name, format="png", bbox_inches="tight")
+        plt.close() # Cerramos la figura para liberar memoria del servidor
+        
+        # Insertamos la imagen procesada en el documento PDF
+        pdf.image(tmpfile.name, x=70, w=150)
+    os.remove(tmpfile.name)
+    
+    # --- 2. SECCIÓN DE DATOS (TABLA) ---
     pdf.add_page()
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, titulo_reporte + " - Datos Detallados", ln=True, align='C')
@@ -149,13 +165,11 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
     cols_existentes = [col for col in columnas_pdf if col in df.columns]
     ancho_col = 270 / max(len(cols_existentes), 1)
 
-    # Encabezados
     pdf.set_font('Arial', 'B', 10)
     for col in cols_existentes:
         pdf.cell(ancho_col, 10, str(col), border=1, align='C')
     pdf.ln()
 
-    # Filas
     pdf.set_font('Arial', '', 8)
     for _, row in df.head(100).iterrows():
         for col in cols_existentes:
@@ -165,20 +179,15 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
             pdf.cell(ancho_col, 8, texto[:35], border=1)
         pdf.ln()
 
-    # --- 3. EXPORTACIÓN INFALIBLE AL 500% ---
-    # Guardamos el PDF en un archivo físico temporal en lugar de la memoria RAM
+    # --- 3. EXPORTACIÓN EN DISCO PARA EVITAR ERRORES DE MEMORIA ---
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
-        # Se guarda el documento terminado en el disco del servidor
         pdf.output(tmp_pdf.name)
-        
-    # Abrimos ese archivo físico en modo "Lectura Binaria" (rb)
+    
     with open(tmp_pdf.name, "rb") as f:
         pdf_bytes = f.read()
         
-    # Limpiamos el archivo del servidor para no dejar basura
     os.remove(tmp_pdf.name)
     
-    # Entregamos los bytes puros al botón de descarga de Streamlit
     return pdf_bytes
 
 # 6. Creación de pestañas
