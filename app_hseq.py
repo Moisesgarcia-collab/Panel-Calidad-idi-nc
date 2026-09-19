@@ -7,7 +7,6 @@ import os
 import tempfile
 import datetime
 from fpdf import FPDF
-from datetime import datetime
 import gspread 
 from oauth2client.service_account import ServiceAccountCredentials
 import json
@@ -125,7 +124,7 @@ class PDFGerencial(FPDF):
         self.set_y(-15) # Posición a 1.5 cm del final
         self.set_font('Arial', 'I', 8)
         self.set_text_color(150, 150, 150)
-        fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
+        fecha_hoy = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
         # Imprime Fecha, Confidencialidad y Número de Página
         self.cell(0, 10, f'Generado el: {fecha_hoy}  |  Documento de Uso Interno  |  Página {self.page_no()}', 0, 0, 'C')
 
