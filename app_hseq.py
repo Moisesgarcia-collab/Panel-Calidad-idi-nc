@@ -120,6 +120,7 @@ def convertir_df_a_excel(df):
 def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
     pdf = FPDF(orientation='L') 
     
+    # 1. SECCIÓN VISUAL (Gráficos)
     if figuras and len(figuras) > 0:
         for index, fig in enumerate(figuras):
             pdf.add_page()
@@ -128,22 +129,13 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
                 pdf.cell(0, 10, titulo_reporte + " - Resumen Visual", ln=True, align='C')
                 pdf.ln(5)
                 
-            # --- ESCUDO PROTECTOR (MANEJO DE EXCEPCIONES) ---
-            try:
-                # Intentamos tomar la foto del gráfico
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                    fig.write_image(tmpfile.name, format="png", width=900, height=450)
-                    pdf.image(tmpfile.name, x=15, w=260)
-                os.remove(tmpfile.name)
-            except Exception:
-                # Si Kaleido falla en la nube, atrapamos el error y evitamos que la app explote
-                pdf.set_font('Arial', 'I', 10)
-                pdf.set_text_color(150, 150, 150)
-                pdf.cell(0, 10, "(Gráfico omitido: El entorno de nube actual restringe el renderizado de imágenes interactivas)", ln=True, align='C')
-                pdf.set_text_color(0, 0, 0) # Restauramos el color negro
-            # ------------------------------------------------
+            # Kaleido toma la fotografía y la pega en el PDF
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                fig.write_image(tmpfile.name, format="png", width=900, height=450)
+                pdf.image(tmpfile.name, x=15, w=260)
+            os.remove(tmpfile.name)
             
-    # Independientemente de los gráficos, generamos la tabla de datos (Lo más importante)
+    # 2. SECCIÓN DE DATOS (Tabla)
     pdf.add_page()
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, titulo_reporte + " - Datos Detallados", ln=True, align='C')
@@ -157,13 +149,13 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
     cols_existentes = [col for col in columnas_pdf if col in df.columns]
     ancho_col = 270 / max(len(cols_existentes), 1)
 
-    # Encabezados de la tabla
+    # Encabezados
     pdf.set_font('Arial', 'B', 10)
     for col in cols_existentes:
         pdf.cell(ancho_col, 10, str(col), border=1, align='C')
     pdf.ln()
 
-    # Filas de datos
+    # Filas
     pdf.set_font('Arial', '', 8)
     for _, row in df.head(100).iterrows():
         for col in cols_existentes:
@@ -173,7 +165,21 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
             pdf.cell(ancho_col, 8, texto[:35], border=1)
         pdf.ln()
 
-    return bytes(pdf.output())
+    # --- 3. EXPORTACIÓN INFALIBLE AL 500% ---
+    # Guardamos el PDF en un archivo físico temporal en lugar de la memoria RAM
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+        # Se guarda el documento terminado en el disco del servidor
+        pdf.output(tmp_pdf.name)
+        
+    # Abrimos ese archivo físico en modo "Lectura Binaria" (rb)
+    with open(tmp_pdf.name, "rb") as f:
+        pdf_bytes = f.read()
+        
+    # Limpiamos el archivo del servidor para no dejar basura
+    os.remove(tmp_pdf.name)
+    
+    # Entregamos los bytes puros al botón de descarga de Streamlit
+    return pdf_bytes
 
 # 6. Creación de pestañas
 tab1, tab2 = st.tabs(["📋 Informes de Inspección (IDI)", "⚠️ Productos No Conformes (NCs)"])
