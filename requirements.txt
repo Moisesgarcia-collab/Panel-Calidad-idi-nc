@@ -5,3 +5,4 @@ fpdf
 gspread
 oauth2client
 openpyxl
+kaleido
