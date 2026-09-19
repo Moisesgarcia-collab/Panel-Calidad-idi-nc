@@ -17,8 +17,7 @@ RUTA_CREDENCIALES = os.path.join(DIRECTORIO_ACTUAL, "credenciales.json")
 # 2. Configuración general de la página
 st.set_page_config(page_title="Panel de Control de Calidad - Oil & Gas", layout="wide")
 
-# Escudo Anti-traducción y CSS Futurista
-st.markdown('<meta name="google" content="notranslate">', unsafe_allow_html=True)
+# CSS Futurista para las métricas (Se eliminó el tag <meta> problemático)
 st.markdown("""
 <style>
     div[data-testid="metric-container"] {
@@ -381,6 +380,7 @@ with tab1:
             )
         }
     )
+
 # --- PESTAÑA 2: NO CONFORMIDADES (MasterNCs) ---
 with tab2:
     if st.session_state['es_admin']:
@@ -498,9 +498,29 @@ with tab2:
         total_criticos = len(df_ncs_filtrado[df_ncs_filtrado['Criticidad'].astype(str).str.upper().str.contains("CRITIC|CRÍTICA", na=False)])
         total_cerradas = len(df_ncs_filtrado[df_ncs_filtrado['Estado'].astype(str).str.upper().str.contains("CERRAD", na=False)])
         
+        # --- CÁLCULO DE DELTAS Y TENDENCIAS ---
+        delta_total_texto = None
+        delta_criticos_texto = None
+        
+        if 'Filtro_Fecha' in df_ncs_filtrado.columns and not df_ncs_filtrado['Filtro_Fecha'].dropna().empty:
+            fecha_referencia = df_ncs_filtrado['Filtro_Fecha'].dropna().max()
+            hace_7_dias = fecha_referencia - datetime.timedelta(days=7)
+            hace_14_dias = fecha_referencia - datetime.timedelta(days=14)
+            
+            nc_ultimos_7 = df_ncs_filtrado[df_ncs_filtrado['Filtro_Fecha'] > hace_7_dias]
+            nc_previos_7 = df_ncs_filtrado[(df_ncs_filtrado['Filtro_Fecha'] > hace_14_dias) & (df_ncs_filtrado['Filtro_Fecha'] <= hace_7_dias)]
+            
+            dif_total = len(nc_ultimos_7) - len(nc_previos_7)
+            delta_total_texto = f"{dif_total:+d} vs sem. anterior"
+            
+            crit_ultimos = len(nc_ultimos_7[nc_ultimos_7['Criticidad'].astype(str).str.upper().str.contains("CRITIC|CRÍTICA", na=False)])
+            crit_previos = len(nc_previos_7[nc_previos_7['Criticidad'].astype(str).str.upper().str.contains("CRITIC|CRÍTICA", na=False)])
+            dif_crit = crit_ultimos - crit_previos
+            delta_criticos_texto = f"{dif_crit:+d} críticos (7d)"
+
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Total NC", total_nc)
-        m2.metric("Total Críticos", total_criticos, "- Requiere atención prioritaria", delta_color="inverse")
+        m1.metric("Total NC", total_nc, delta=delta_total_texto, delta_color="inverse")
+        m2.metric("Total Críticos", total_criticos, delta=delta_criticos_texto, delta_color="inverse")
         
         if 'Dias_Abiertas' in df_ncs_filtrado.columns:
             df_ncs_filtrado.loc[:, 'Dias_Abiertos_Num'] = pd.to_numeric(df_ncs_filtrado['Dias_Abiertas'], errors='coerce')
@@ -576,12 +596,11 @@ with tab2:
                     df_ncs_grafico['Semaforo'] = df_ncs_grafico.apply(asignar_color_alerta, axis=1)
                     conteo_semaforo = df_ncs_grafico.groupby(['Contratista', 'Semaforo']).size().reset_index(name='Cantidad')
                     
-                    # --- CORRECCIÓN DE COLOR PARA "CERRADA" EN MODO OSCURO ---
                     colores_alerta = {
                         'Vencida (Rojo)': '#FF4B4B',
                         'Alerta (Amarillo)': '#FEB019',
                         'A tiempo (Verde)': '#00CC96',
-                        'Cerrada': '#9E9E9E', # Color Gris Plata Luminoso para destacar en el fondo oscuro
+                        'Cerrada': '#9E9E9E', 
                         'Sin Fecha': '#808080'
                     }
                     
