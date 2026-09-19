@@ -128,11 +128,22 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
                 pdf.cell(0, 10, titulo_reporte + " - Resumen Visual", ln=True, align='C')
                 pdf.ln(5)
                 
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                fig.write_image(tmpfile.name, format="png", width=900, height=450)
-                pdf.image(tmpfile.name, x=15, w=260)
-            os.remove(tmpfile.name)
+            # --- ESCUDO PROTECTOR (MANEJO DE EXCEPCIONES) ---
+            try:
+                # Intentamos tomar la foto del gráfico
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+                    fig.write_image(tmpfile.name, format="png", width=900, height=450)
+                    pdf.image(tmpfile.name, x=15, w=260)
+                os.remove(tmpfile.name)
+            except Exception:
+                # Si Kaleido falla en la nube, atrapamos el error y evitamos que la app explote
+                pdf.set_font('Arial', 'I', 10)
+                pdf.set_text_color(150, 150, 150)
+                pdf.cell(0, 10, "(Gráfico omitido: El entorno de nube actual restringe el renderizado de imágenes interactivas)", ln=True, align='C')
+                pdf.set_text_color(0, 0, 0) # Restauramos el color negro
+            # ------------------------------------------------
             
+    # Independientemente de los gráficos, generamos la tabla de datos (Lo más importante)
     pdf.add_page()
     pdf.set_font('Arial', 'B', 14)
     pdf.cell(0, 10, titulo_reporte + " - Datos Detallados", ln=True, align='C')
@@ -146,11 +157,13 @@ def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
     cols_existentes = [col for col in columnas_pdf if col in df.columns]
     ancho_col = 270 / max(len(cols_existentes), 1)
 
+    # Encabezados de la tabla
     pdf.set_font('Arial', 'B', 10)
     for col in cols_existentes:
         pdf.cell(ancho_col, 10, str(col), border=1, align='C')
     pdf.ln()
 
+    # Filas de datos
     pdf.set_font('Arial', '', 8)
     for _, row in df.head(100).iterrows():
         for col in cols_existentes:
