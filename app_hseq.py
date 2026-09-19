@@ -7,6 +7,7 @@ import os
 import tempfile
 import datetime
 from fpdf import FPDF
+from datetime import datetime
 import gspread 
 from oauth2client.service_account import ServiceAccountCredentials
 import json
@@ -118,138 +119,148 @@ def convertir_df_a_excel(df):
         df.to_excel(writer, index=False, sheet_name='Reporte')
     return output.getvalue()
 
+# 1. Creamos una plantilla gerencial que hereda de FPDF para tener Pie de Página automático
+class PDFGerencial(FPDF):
+    def footer(self):
+        self.set_y(-15) # Posición a 1.5 cm del final
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(150, 150, 150)
+        fecha_hoy = datetime.now().strftime("%d/%m/%Y %H:%M")
+        # Imprime Fecha, Confidencialidad y Número de Página
+        self.cell(0, 10, f'Generado el: {fecha_hoy}  |  Documento de Uso Interno  |  Página {self.page_no()}', 0, 0, 'C')
+
+# 2. Función principal actualizada
 def generar_pdf_reporte(df, titulo_reporte, tipo_reporte, figuras=None):
-    pdf = FPDF(orientation='L') 
+    # Usamos nuestra nueva plantilla en lugar del FPDF básico
+    pdf = PDFGerencial(orientation='L') 
     pdf.set_auto_page_break(auto=True, margin=15)
     
-    # --- 1. PORTADA Y ESTADÍSTICAS VISUALES CON MATPLOTLIB ---
     pdf.add_page()
     
-    # Banner del Título del Reporte
-    pdf.set_fill_color(30, 30, 46) # Color corporativo oscuro
+    # --- ENCABEZADO CORPORATIVO ---
+    pdf.set_fill_color(30, 30, 46) 
     pdf.set_text_color(255, 255, 255)
     pdf.set_font('Arial', 'B', 18)
-    pdf.cell(0, 15, f"  {titulo_reporte} - Panel de Control", ln=True, align='L', fill=True)
+    pdf.cell(0, 15, f"  {titulo_reporte} - Resumen Ejecutivo", ln=True, align='L', fill=True)
     pdf.ln(5)
+
+    # --- TARJETAS DE INDICADORES CLAVE (KPIs) ---
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.set_fill_color(240, 244, 248) # Gris azulado claro para las cajas
     
-    # Lienzo de Matplotlib: 1 Fila, 2 Columnas para múltiples estadísticas
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    total_registros = len(df)
+    
+    # Lógica matemática para extraer los números gerenciales
+    if tipo_reporte == "IDI":
+        abiertos = len(df[df['Estado'].str.contains('ABIERTO', case=False, na=False)]) if 'Estado' in df.columns else 0
+        texto_kpi2 = f"Inspecciones Pendientes: {abiertos}"
+        cumplimiento = round(((total_registros - abiertos) / total_registros) * 100, 1) if total_registros > 0 else 0
+        texto_kpi3 = f"Índice de Cierre: {cumplimiento}%"
+    else:
+        abiertas = len(df[df['Estado'].str.contains('Gestión|Abiert', case=False, na=False)]) if 'Estado' in df.columns else 0
+        texto_kpi2 = f"NCs Activas: {abiertas}"
+        promedio_dias = round(df['Dias_Abiertas'].mean(), 1) if 'Dias_Abiertas' in df.columns and pd.api.types.is_numeric_dtype(df['Dias_Abiertas']) else "N/A"
+        texto_kpi3 = f"Promedio Antigüedad: {promedio_dias} días"
+
+    # Dibujamos 3 cajas alineadas horizontalmente
+    ancho_caja = 90
+    pdf.cell(ancho_caja, 12, f"Total Histórico: {total_registros}", border=1, align='C', fill=True)
+    pdf.cell(2, 12, "", border=0) # Espaciador
+    pdf.cell(ancho_caja, 12, texto_kpi2, border=1, align='C', fill=True)
+    pdf.cell(2, 12, "", border=0) # Espaciador
+    pdf.cell(ancho_caja, 12, texto_kpi3, border=1, align='C', fill=True)
+    pdf.ln(18) # Salto de línea más grande antes de los gráficos
+    
+    # --- GRÁFICOS VISUALES ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 4.2)) # Altura reducida para que entren los KPIs
     fig.patch.set_facecolor('#ffffff') 
     
     if tipo_reporte == "IDI":
-        # Gráfico 1: Estado (Gráfico de Dona)
         if 'Estado' in df.columns:
             conteo_est = df['Estado'].value_counts()
             if not conteo_est.empty:
                 colores_est = ['#FF4B4B' if 'ABIERTO' in str(x).upper() else '#28A745' for x in conteo_est.index]
                 ax1.pie(conteo_est, labels=conteo_est.index, autopct='%1.1f%%', startangle=90, colors=colores_est, wedgeprops={'width': 0.4, 'edgecolor': 'w'})
-                ax1.set_title("Estado de Inspecciones", fontsize=14, fontweight='bold', color='#333333')
+                ax1.set_title("Estado Operativo", fontsize=14, fontweight='bold', color='#333333')
         
-        # Gráfico 2: Top Disciplinas (Barras Horizontales)
         if 'Disciplina' in df.columns:
-            conteo_disc = df['Disciplina'].value_counts().head(5) # Top 5
+            conteo_disc = df['Disciplina'].value_counts().head(5)
             if not conteo_disc.empty:
                 ax2.barh(conteo_disc.index, conteo_disc.values, color='#4A90E2')
-                ax2.set_title("Top 5 Disciplinas Inspeccionadas", fontsize=14, fontweight='bold', color='#333333')
-                ax2.invert_yaxis() # Ordenar de mayor a menor
-                
-                # Diseño limpio: quitar bordes
-                for spine in ['top', 'right', 'bottom']:
-                    ax2.spines[spine].set_visible(False)
+                ax2.set_title("Top 5 Áreas de Impacto", fontsize=14, fontweight='bold', color='#333333')
+                ax2.invert_yaxis() 
+                for spine in ['top', 'right', 'bottom']: ax2.spines[spine].set_visible(False)
                 ax2.xaxis.set_visible(False)
-                
-                # Agregar números al final de cada barra
-                for i, v in enumerate(conteo_disc.values):
-                    ax2.text(v + 0.1, i, str(v), va='center', fontweight='bold', color='#333333')
+                for i, v in enumerate(conteo_disc.values): ax2.text(v + 0.1, i, str(v), va='center', fontweight='bold', color='#333333')
 
-    else: # Lógica Visual para No Conformidades (NC)
-        # Gráfico 1: Estado (Gráfico de Dona)
+    else:
         if 'Estado' in df.columns:
             conteo_est = df['Estado'].value_counts()
             if not conteo_est.empty:
                 colores_est = ['#FF4B4B' if 'ABIERT' in str(x).upper() else '#28A745' if 'CERRAD' in str(x).upper() else '#FEB019' for x in conteo_est.index]
                 ax1.pie(conteo_est, labels=conteo_est.index, autopct='%1.1f%%', startangle=90, colors=colores_est, wedgeprops={'width': 0.4, 'edgecolor': 'w'})
-                ax1.set_title("Estado Operativo NCs", fontsize=14, fontweight='bold', color='#333333')
+                ax1.set_title("Estatus Global", fontsize=14, fontweight='bold', color='#333333')
         
-        # Gráfico 2: Criticidad (Barras Verticales)
         if 'Criticidad' in df.columns:
             conteo_crit = df['Criticidad'].value_counts()
             if not conteo_crit.empty:
                 mapa_colores = {'Leve': '#28A745', 'Menor': '#008FFB', 'Mayor': '#FEB019', 'Crítica': '#FF4B4B', 'Crítico': '#FF4B4B'}
                 colores_usados = [mapa_colores.get(str(x).capitalize(), '#808080') for x in conteo_crit.index]
-                
                 ax2.bar(conteo_crit.index, conteo_crit.values, color=colores_usados)
-                ax2.set_title("Nivel de Riesgo (Criticidad)", fontsize=14, fontweight='bold', color='#333333')
-                
-                # Diseño limpio
-                for spine in ['top', 'right', 'left']:
-                    ax2.spines[spine].set_visible(False)
+                ax2.set_title("Matriz de Riesgo", fontsize=14, fontweight='bold', color='#333333')
+                for spine in ['top', 'right', 'left']: ax2.spines[spine].set_visible(False)
                 ax2.yaxis.set_visible(False)
-                
-                # Agregar números encima de las barras
-                for i, v in enumerate(conteo_crit.values):
-                    ax2.text(i, v + 0.2, str(v), ha='center', fontweight='bold', color='#333333')
+                for i, v in enumerate(conteo_crit.values): ax2.text(i, v + 0.2, str(v), ha='center', fontweight='bold', color='#333333')
 
     plt.tight_layout()
-    
-    # Guardar gráfico combinado de alta resolución
     with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
         plt.savefig(tmpfile.name, format="png", dpi=150, bbox_inches="tight")
-        plt.close(fig) # Liberar memoria
-        pdf.image(tmpfile.name, x=10, w=275) # Insertar en PDF
+        plt.close(fig) 
+        pdf.image(tmpfile.name, x=10, y=70, w=275) 
     os.remove(tmpfile.name)
     
-    # --- 2. SECCIÓN DE DATOS (TABLA ESTILIZADA) ---
+    # --- TABLA DE DATOS ---
     pdf.add_page()
     pdf.set_text_color(0, 0, 0)
     pdf.set_font('Arial', 'B', 14)
-    pdf.cell(0, 10, "Registro Detallado", ln=True, align='L')
+    pdf.cell(0, 10, "Registro Analítico Detallado", ln=True, align='L')
     pdf.ln(2)
 
-    # Ampliamos las columnas para mayor detalle
     if tipo_reporte == "IDI":
         columnas_pdf = ['Fecha', 'Disciplina', 'Contratista', 'Aspecto', 'Criticidad', 'Estado']
     else:
         columnas_pdf = ['ID', 'Fecha', 'Contratista', 'Criticidad', 'Estado', 'Dias_Abiertas']
         
     cols_existentes = [col for col in columnas_pdf if col in df.columns]
-    ancho_col = 277 / max(len(cols_existentes), 1) # 277 es el máximo ancho útil horizontal
+    ancho_col = 277 / max(len(cols_existentes), 1)
 
-    # Formato del Encabezado de la tabla
-    pdf.set_fill_color(74, 144, 226) # Azul corporativo
+    pdf.set_fill_color(41, 128, 185) 
     pdf.set_text_color(255, 255, 255)
-    pdf.set_font('Arial', 'B', 10)
+    pdf.set_font('Arial', 'B', 9)
     for col in cols_existentes:
-        pdf.cell(ancho_col, 10, str(col).replace("_", " "), border=0, align='C', fill=True)
+        pdf.cell(ancho_col, 10, str(col).replace("_", " ").upper(), border=0, align='C', fill=True)
     pdf.ln()
 
-    # Formato de las Filas (Zebra Striping: colores intercalados)
     pdf.set_text_color(0, 0, 0)
-    pdf.set_font('Arial', '', 9)
+    pdf.set_font('Arial', '', 8)
     intercalar_color = False
-    pdf.set_fill_color(242, 242, 242) # Gris claro para intercalar
+    pdf.set_fill_color(245, 247, 250) 
     
     for _, row in df.head(100).iterrows():
         for col in cols_existentes:
             valor = row[col]
-            texto = str(valor) if pd.notna(valor) else "N/A"
+            texto = str(valor) if pd.notna(valor) else "-"
             texto = texto.encode('latin-1', 'replace').decode('latin-1')
-            
-            # Acortar textos demasiado largos para no romper la tabla
-            texto = texto[:35] + "..." if len(texto) > 35 else texto
-            
-            # fill=intercalar_color pinta el fondo solo si es True
+            texto = texto[:40] + "..." if len(texto) > 40 else texto
             pdf.cell(ancho_col, 8, texto, border=1 if not intercalar_color else 0, align='C', fill=intercalar_color)
         pdf.ln()
-        intercalar_color = not intercalar_color # Cambia entre True y False en cada fila
+        intercalar_color = not intercalar_color
 
-    # --- 3. EXPORTACIÓN SEGURA EN DISCO ---
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
         pdf.output(tmp_pdf.name)
-    
     with open(tmp_pdf.name, "rb") as f:
         pdf_bytes = f.read()
-        
     os.remove(tmp_pdf.name)
     
     return pdf_bytes
